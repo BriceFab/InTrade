@@ -308,7 +308,8 @@ public final class TradeSession {
 
     /**
      * Removes the amounts of currencies that a reload disabled, left out of the trade window or gave to a new provider,
-     * so the trade can still complete and nothing is settled with a currency the players did not see.
+     * so the trade can still complete and nothing is settled with a currency the players did not see. Both players
+     * confirm again, as a reload may change a tax.
      *
      * @param before the currencies that were active before the reload
      */
@@ -321,6 +322,8 @@ public final class TradeSession {
                 messages().send(other(side).player, "trade.currency-disabled");
                 changed(side);
             }
+            a.ready = false;
+            unready(b);
         });
     }
 
@@ -503,7 +506,7 @@ public final class TradeSession {
         }
 
         // If the currencies cannot be moved the trade stays open, unless a balance may be wrong
-        Settlement.Failure settlement = Settlement.run(plugin.getLogger(), currencies().active(), a, b);
+        Settlement.Failure settlement = Settlement.run(plugin.getLogger(), settings(), currencies().active(), a, b);
         if (settlement != null) {
             if (settlement.unknown()) stop(TradeCancelEvent.Reason.CANCELLED, settlement.key(), null, null);
             else fail(settlement.key(), settlement.cause());

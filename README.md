@@ -9,7 +9,7 @@ InTrade is a player-to-player trading plugin for Paper servers. Two players put 
 It is:
 
 * **safe** - any change resets both confirmations and locks the Ready button for a moment. Every change of an offer is written to the database before the items move, so a crash can neither lose nor duplicate them. Blocked items are also found inside shulker boxes and bundles.
-* **complete** - Vault money, experience levels, PlayerPoints and currencies of other plugins next to 16 item slots per side. Amounts can be typed as `1500`, `2.5k` or `1m`.
+* **complete** - Vault money, experience levels, PlayerPoints and currencies of other plugins next to 16 item slots per side. Amounts can be typed as `1500`, `2.5k` or `1m`. An optional tax per currency is taken from what the receiver gets.
 * **transparent** - shulker boxes and bundles in the partner's offer can be opened before confirming, and every trade is kept in the history.
 * **vanilla** - no client mod or resource pack. Amounts are typed in a dialog, or in an anvil before 1.21.7. Bedrock players get native forms through Floodgate.
 * **multilingual** - each player sees their client language. English and Russian are included.
@@ -40,6 +40,10 @@ Download the jar from [Releases](../../releases), put it into `plugins` and rest
 Player permissions are grouped under `intrade.player` (default: everyone), staff permissions under `intrade.admin` (default: op). The full list is in [`plugin.yml`](plugin/src/main/resources/plugin.yml).
 
 PlaceholderAPI: `%intrade_trades%`, `%intrade_trading%`, `%intrade_accepting%`, `%intrade_top_<1-10>_name%`, `%intrade_top_<1-10>_trades%`.
+
+## Tax
+
+`currencies.<id>.tax-percent` in `config.yml` (0 to 100 with up to 3 decimal places, default 0) applies to built-in currencies and currencies of other plugins. The receiver of an amount gets the amount minus the tax, the tax is removed from the economy. The tax is rounded up to the smallest unit of the currency, so splitting a payment into many small trades does not avoid it. The trade window shows what the partner receives and what you receive after tax. Trade history and events keep the full amounts. A reload resets the confirmations of open trades, so nobody completes a trade at a rate they did not see.
 
 ## API
 
@@ -75,7 +79,7 @@ currencies:
 * `id()` is lower case `[a-z0-9_-]{1,32}`. It is the config key `currencies.<id>`, the permission `intrade.currency.<id>` (granted by `intrade.player`) and the language key `currency.<id>` (the id is shown if the key is missing). `money`, `experience` and `playerpoints` are reserved for the built-in currencies.
 * `icon()` must be an item and `scale()` between 0 and 18. Both are read once when the currency is loaded; a currency with an invalid id, icon or scale is ignored with a warning.
 * `balance(player)` is called while the trade window is shown: it must be cheap and must never block. If `balance` or `format` throws or returns null, the trade that called it is cancelled, the items go back to their owners and the error is logged with the currency, its plugin and the players.
-* `settle(trade, payments)` applies all payments of one completed trade in this currency, all or none: `true` everything applied, `false` nothing applied (for example a balance changed), an exception: outcome unknown. Each `Payment(from, to, amount)` moves `amount` from `from` to `to`. The trade id is unique per completion attempt, use it as an idempotency key.
+* `settle(trade, payments)` applies all payments of one completed trade in this currency, all or none: `true` everything applied, `false` nothing applied (for example a balance changed), an exception: outcome unknown. Each `Payment(from, to, amount, tax)` moves `amount` from `from` and gives `amount - tax` to `to`. The trade id is unique per completion attempt, use it as an idempotency key.
 * `revert(trade)` undoes a successful `settle` when a currency settled later fails. It must be idempotent; an exception means it was not undone.
 
 Both run on the main thread while the trade completes, like the transfers of the built-in currencies. They may block briefly (a local transaction) but must never wait for a network call.

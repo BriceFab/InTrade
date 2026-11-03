@@ -11,16 +11,18 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import me.spolzer.intrade.api.currency.TradeCurrency;
 import me.spolzer.intrade.api.currency.TradeCurrency.Payment;
+import me.spolzer.intrade.config.Settings;
 import me.spolzer.intrade.currency.BuiltInCurrency;
+import me.spolzer.intrade.currency.Currencies;
 import me.spolzer.intrade.currency.Currency;
 import me.spolzer.intrade.currency.ExternalCurrency;
 
 /**
  * Moves the currencies of a confirmed trade in one main thread step. The currencies of other plugins are settled
  * first, one call each in the order of the config, then the built-in currencies: everything is withdrawn before
- * anything is paid out. If a step fails, the steps done so far are undone in reverse order. If the outcome of a step
- * or of an undo is unknown, the balances may be wrong: the failure is then {@code unknown} and logged with the trade
- * id.
+ * anything is paid out, the receiver gets the amount minus the tax. If a step fails, the steps done so far are undone
+ * in reverse order. If the outcome of a step or of an undo is unknown, the balances may be wrong: the failure is then
+ * {@code unknown} and logged with the trade id.
  */
 final class Settlement {
     private final UUID trade = UUID.randomUUID();
@@ -47,11 +49,11 @@ final class Settlement {
     }
 
     /** Moves the offered amounts of all currencies, or none of them. Returns null when everything was moved. */
-    static Failure run(Logger logger, List<Currency> currencies, TradeSide a, TradeSide b) {
-        return new Settlement(logger, a, b).run(currencies);
+    static Failure run(Logger logger, Settings settings, List<Currency> currencies, TradeSide a, TradeSide b) {
+        return new Settlement(logger, a, b).run(settings, currencies);
     }
 
-    private Failure run(List<Currency> currencies) {
+    private Failure run(Settings settings, List<Currency> currencies) {
         List<Charge> external = new ArrayList<>();
         List<Charge> builtIn = new ArrayList<>();
         for (Currency currency : currencies) {
@@ -59,7 +61,7 @@ final class Settlement {
             for (TradeSide side : List.of(a, b)) {
                 BigDecimal amount = side.currency(currency.id());
                 if (amount.signum() <= 0) continue;
-                payments.add(new Payment(side.id(), other(side).id(), amount));
+                payments.add(new Payment(side.id(), other(side).id(), amount, Currencies.tax(settings, currency, amount)));
             }
             if (!payments.isEmpty()) {
                 (currency instanceof ExternalCurrency ? external : builtIn).add(new Charge(currency, List.copyOf(payments)));
@@ -88,7 +90,8 @@ final class Settlement {
         }
         for (Charge charge : builtIn) {
             for (Payment payment : charge.payments()) {
-                Failure failure = transfer(charge.currency(), side(payment.to()), payment.amount(), false);
+                if (payment.received().signum() == 0) continue;
+                Failure failure = transfer(charge.currency(), side(payment.to()), payment.received(), false);
                 if (failure != null) return failure;
             }
         }

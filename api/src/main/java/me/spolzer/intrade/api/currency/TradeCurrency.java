@@ -72,13 +72,23 @@ public interface TradeCurrency {
      */
     void revert(UUID trade);
 
-    /** One payment of a trade: {@code from} pays {@code amount} to {@code to}. The amount uses the currency scale. */
-    record Payment(UUID from, UUID to, BigDecimal amount) {
+    /**
+     * One payment of a trade: {@code from} pays {@code amount}, {@code to} receives {@code amount - tax}. The tax
+     * ({@code currencies.<id>.tax-percent}, 0 by default) is removed from the economy. All amounts use the currency
+     * scale.
+     */
+    record Payment(UUID from, UUID to, BigDecimal amount, BigDecimal tax) {
 
         public Payment {
             Objects.requireNonNull(from, "from");
             Objects.requireNonNull(to, "to");
             if (amount.signum() <= 0) throw new IllegalArgumentException("amount must be positive");
+            if (tax.signum() < 0 || tax.compareTo(amount) > 0) throw new IllegalArgumentException("tax must be between 0 and amount");
+        }
+
+        /** What {@code to} receives. */
+        public BigDecimal received() {
+            return amount.subtract(tax);
         }
     }
 }

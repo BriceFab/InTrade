@@ -25,6 +25,7 @@ public final class Currencies {
     // Plain digits only: BigDecimal alone would also accept exponents like 1e999999999
     private static final Pattern NUMBER = Pattern.compile("\\d{1,18}(\\.\\d*)?|\\.\\d{1,18}");
     private static final Pattern ID = Pattern.compile("[a-z0-9_-]{1,32}");
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     // Number of currency buttons in the trade window
     private static final int SHOWN = 3;
     // Amounts are typed with at most 18 digits, see NUMBER
@@ -110,6 +111,19 @@ public final class Currencies {
             parent.getChildren().put(name, true);
             parent.recalculatePermissibles();
         }
+    }
+
+    /**
+     * Part of an amount that is taken as tax. Rounded up to the currency scale, so splitting an amount into many
+     * small trades does not avoid the tax.
+     */
+    public static BigDecimal tax(BigDecimal amount, BigDecimal percent, int scale) {
+        if (percent.signum() <= 0 || amount.signum() <= 0) return BigDecimal.ZERO.setScale(scale);
+        return amount.multiply(percent).divide(HUNDRED).setScale(scale, RoundingMode.UP).min(amount);
+    }
+
+    public static BigDecimal tax(Settings settings, Currency currency, BigDecimal amount) {
+        return tax(amount, settings.taxPercent(currency.id()), currency.scale());
     }
 
     public List<Currency> active() { return active; }

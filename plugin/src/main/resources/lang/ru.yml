@@ -46,11 +46,19 @@ menu:
         - ""
         - "<yellow>ЛКМ<gray> - указать сумму"
         - "<yellow>ПКМ<gray> - убрать"
+      tax:
+        - "<gray>Партнёр получит: <white><received>"
+        - "<gray>Налог (<percent>%): <white><tax>"
+      tax-rate:
+        - "<gray>Налог на обмен: <white><percent>%"
     partner:
       name: "<currency>: <white><amount>"
       empty: "<currency>: <dark_gray>нет"
       lore:
         - "<gray>Предлагает партнёр."
+      tax:
+        - "<gray>Вы получите: <white><received>"
+        - "<gray>Налог (<percent>%): <white><tax>"
     changed:
       - "<yellow>Сумма только что изменилась!"
     locked:

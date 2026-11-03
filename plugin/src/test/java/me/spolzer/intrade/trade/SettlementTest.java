@@ -3,6 +3,7 @@ package me.spolzer.intrade.trade;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
@@ -17,9 +18,16 @@ import me.spolzer.intrade.api.currency.TradeCurrency;
 import me.spolzer.intrade.currency.BuiltInCurrency;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class SettlementTest extends TradeTestBase {
+
+    // 10 % on tokens, 50 % on experience, no tax on tickets
+    @BeforeEach
+    void taxes() throws Exception {
+        configure(Map.of("currencies.tokens.tax-percent", 10, "currencies.experience.tax-percent", 50));
+    }
 
     @Test
     void externalCurrenciesSettleInOrderBeforeBuiltIn() {
@@ -39,12 +47,14 @@ class SettlementTest extends TradeTestBase {
         assertEquals(List.of("tokens:settle", "tickets:settle"), calls);
         assertEquals(List.of(10, 10), levels);
         assertEquals(tokens.trade, tickets.trade);
-        assertEquals(List.of(new TradeCurrency.Payment(id(alice), id(bob), new BigDecimal("101"))), tokens.payments);
-        assertEquals(List.of(new TradeCurrency.Payment(id(bob), id(alice), new BigDecimal("3"))), tickets.payments);
-        assertBalances(tokens, "899", "1101");
+        // 10 % of 101 is 10.1, rounded up to 11
+        assertEquals(List.of(new TradeCurrency.Payment(id(alice), id(bob), new BigDecimal("101"), new BigDecimal("11"))), tokens.payments);
+        assertEquals(List.of(new TradeCurrency.Payment(id(bob), id(alice), new BigDecimal("3"), BigDecimal.ZERO)), tickets.payments);
+        assertBalances(tokens, "899", "1090");
         assertBalances(tickets, "1003", "997");
+        // 50 % of 5 levels is 2.5, rounded up to 3
         assertEquals(5, alice.getLevel());
-        assertEquals(5, bob.getLevel());
+        assertEquals(2, bob.getLevel());
         await(() -> bob.getInventory().contains(Material.DIAMOND, 5));
         assertFalse(alice.getInventory().contains(Material.DIAMOND));
         assertFalse(logged(Level.SEVERE));
@@ -104,7 +114,7 @@ class SettlementTest extends TradeTestBase {
         assertTrue(session.finished());
         assertEquals(List.of("tokens:settle", "tickets:settle", "tokens:revert"), calls);
         // The settled tokens could not be taken back: logged for staff, not hidden
-        assertBalances(tokens, "990", "1010");
+        assertBalances(tokens, "990", "1009");
         assertTrue(alice.getInventory().contains(Material.DIAMOND, 5));
         assertTrue(logged(Level.SEVERE, tokens.trade.toString(), "tokens"));
         List<String> messages = drainMessages();
@@ -119,7 +129,7 @@ class SettlementTest extends TradeTestBase {
         TradeSide a = side(alice, "tokens", "5", "points", "7");
         TradeSide b = side(bob, "points", "3");
 
-        Settlement.Failure failure = Settlement.run(plugin.getLogger(), List.of(currency("tokens"), points), a, b);
+        Settlement.Failure failure = Settlement.run(plugin.getLogger(), plugin.settings(), List.of(currency("tokens"), points), a, b);
         // The payout of 7 to bob succeeded, the payout of 3 to alice was refused
         assertEquals(new Settlement.Failure("trade.failed.deposit", a, false), failure);
         assertEquals(List.of("tokens:settle", "tokens:revert"), calls);
@@ -136,7 +146,7 @@ class SettlementTest extends TradeTestBase {
         TradeSide a = side(alice, "tokens", "5", "points", "7");
         TradeSide b = side(bob, "points", "3");
 
-        Settlement.Failure failure = Settlement.run(plugin.getLogger(), List.of(currency("tokens"), points), a, b);
+        Settlement.Failure failure = Settlement.run(plugin.getLogger(), plugin.settings(), List.of(currency("tokens"), points), a, b);
         assertEquals(new Settlement.Failure("trade.cancelled.error", null, true), failure);
         assertBalances(tokens, "1000", "1000");
         assertEquals(1000, points.of(alice));
@@ -151,12 +161,70 @@ class SettlementTest extends TradeTestBase {
         TradeSide a = side(alice, "points", "7");
         TradeSide b = side(bob);
 
-        Settlement.Failure failure = Settlement.run(plugin.getLogger(), List.of(points), a, b);
+        Settlement.Failure failure = Settlement.run(plugin.getLogger(), plugin.settings(), List.of(points), a, b);
         assertEquals(new Settlement.Failure("trade.cancelled.error", null, true), failure);
         // Neither the payout nor its undo went through, staff are told which currency to check
         assertEquals(993, points.of(alice));
         assertEquals(1000, points.of(bob));
         assertTrue(logged(Level.SEVERE, "points"));
+    }
+
+    @Test
+    void taxedRollbackRestoresTheFullAmounts() throws Exception {
+        configure(Map.of("currencies.points.tax-percent", 10));
+        Points points = new Points();
+        points.refusedDeposits = Set.of(2);
+        TradeSide a = side(alice, "tokens", "5", "points", "7");
+        TradeSide b = side(bob, "points", "3");
+
+        Settlement.Failure failure = Settlement.run(plugin.getLogger(), plugin.settings(), List.of(currency("tokens"), points), a, b);
+        // bob received 7 - 1 tax, then the payout of 3 - 1 tax to alice was refused
+        assertEquals(new Settlement.Failure("trade.failed.deposit", a, false), failure);
+        assertEquals(List.of(6, 2), points.deposited.subList(0, 2));
+        assertBalances(tokens, "1000", "1000");
+        assertEquals(1000, points.of(alice));
+        assertEquals(1000, points.of(bob));
+        assertFalse(logged(Level.SEVERE));
+    }
+
+    @Test
+    void fullTaxPaysNothingOut() throws Exception {
+        configure(Map.of("currencies.tokens.tax-percent", 100, "currencies.points.tax-percent", 100));
+        Points points = new Points();
+        TradeSide a = side(alice, "tokens", "7", "points", "7");
+        TradeSide b = side(bob, "points", "3");
+
+        assertNull(Settlement.run(plugin.getLogger(), plugin.settings(), List.of(currency("tokens"), points), a, b));
+        assertEquals(List.of(new TradeCurrency.Payment(id(alice), id(bob), new BigDecimal("7"), new BigDecimal("7"))), tokens.payments);
+        assertBalances(tokens, "993", "1000");
+        assertEquals(993, points.of(alice));
+        assertEquals(997, points.of(bob));
+        assertTrue(points.deposited.isEmpty());
+    }
+
+    @Test
+    void taxChangeOnReloadNeedsNewConfirmations() throws Exception {
+        configure(Map.of("safety.confirm-seconds", 1));
+        TradeSession session = open();
+        set(session, alice, "tokens", "4");
+        ready(session);
+        assertTrue(session.countingDown());
+
+        configure(Map.of("currencies.tokens.tax-percent", 20));
+        assertEquals(new BigDecimal("4"), session.sideOf(alice).currency("tokens"));
+        assertFalse(session.countingDown());
+        Thread.sleep(1100);
+        plugin.trades().tick();
+        assertFalse(session.finished());
+        assertTrue(calls.isEmpty());
+
+        ready(session);
+        Thread.sleep(1100);
+        plugin.trades().tick();
+        assertTrue(session.finished());
+        // 20 % of 4 is 0.8, rounded up to 1
+        assertEquals(List.of(new TradeCurrency.Payment(id(alice), id(bob), new BigDecimal("4"), BigDecimal.ONE)), tokens.payments);
+        assertBalances(tokens, "996", "1003");
     }
 
     private TradeSide side(Player player, String... amounts) {
@@ -174,6 +242,7 @@ class SettlementTest extends TradeTestBase {
     private static final class Points implements BuiltInCurrency {
         private final Map<String, Integer> balances = new HashMap<>();
         private int deposits;
+        final List<Integer> deposited = new ArrayList<>();
         // Numbers of the deposit calls that are refused, counted from 1
         Set<Integer> refusedDeposits = Set.of();
         String withdrawThrowsFor;
@@ -196,6 +265,7 @@ class SettlementTest extends TradeTestBase {
 
         @Override
         public boolean deposit(Player player, BigDecimal amount) {
+            deposited.add(amount.intValueExact());
             if (refusedDeposits.contains(++deposits)) return false;
             balances.put(player.getName(), of(player) + amount.intValueExact());
             return true;

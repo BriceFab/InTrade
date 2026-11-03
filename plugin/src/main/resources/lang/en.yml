@@ -46,11 +46,19 @@ menu:
         - ""
         - "<yellow>Left click<gray> to set the amount"
         - "<yellow>Right click<gray> to clear"
+      tax:
+        - "<gray>Your partner receives: <white><received>"
+        - "<gray>Tax (<percent>%): <white><tax>"
+      tax-rate:
+        - "<gray>Tax on trades: <white><percent>%"
     partner:
       name: "<currency>: <white><amount>"
       empty: "<currency>: <dark_gray>none"
       lore:
         - "<gray>Offered by your partner."
+      tax:
+        - "<gray>You receive: <white><received>"
+        - "<gray>Tax (<percent>%): <white><tax>"
     changed:
       - "<yellow>The amount has just changed!"
     locked:

@@ -10,7 +10,10 @@ import me.spolzer.intrade.api.currency.TradeCurrency;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 
-/** A currency of another plugin for the tests. Balances start at 1000; settle applies all payments or none. */
+/**
+ * A currency of another plugin for the tests. Balances start at 1000; settle applies all payments or none and the
+ * receiver gets the amount minus the tax.
+ */
 public final class FakeCurrency implements TradeCurrency {
     private static final BigDecimal START = BigDecimal.valueOf(1000);
 
@@ -69,7 +72,7 @@ public final class FakeCurrency implements TradeCurrency {
             BigDecimal from = next.getOrDefault(payment.from(), START).subtract(payment.amount());
             if (from.signum() < 0) return false;
             next.put(payment.from(), from);
-            next.merge(payment.to(), START.add(payment.amount()), (old, ignored) -> old.add(payment.amount()));
+            next.merge(payment.to(), START.add(payment.received()), (old, ignored) -> old.add(payment.received()));
         }
         balances.putAll(next);
         settled.put(trade, payments);
@@ -85,7 +88,7 @@ public final class FakeCurrency implements TradeCurrency {
         if (done == null) return;
         for (Payment payment : done) {
             balances.put(payment.from(), balanceOf(payment.from()).add(payment.amount()));
-            balances.put(payment.to(), balanceOf(payment.to()).subtract(payment.amount()));
+            balances.put(payment.to(), balanceOf(payment.to()).subtract(payment.received()));
         }
     }
 

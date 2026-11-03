@@ -123,7 +123,10 @@ class ExternalCurrencyTest extends TradeTestBase {
         server.getServicesManager().unregister(TradeCurrency.class, tokens);
         tokens.retired = true;
         FakeCurrency replacement = register("tokens");
-        assertTrue(b.ready, "the reload alone changes nothing in this trade");
+        // The reload resets the confirmations, bob confirms again before alice answers
+        assertFalse(b.ready);
+        ready(session, bob);
+        assertTrue(b.ready);
 
         session.amountEntered(a, asked, new BigDecimal("5"));
         assertEquals(0, tokens.retiredCalls);
